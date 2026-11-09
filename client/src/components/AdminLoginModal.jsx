@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Lock, User, Key, X, AlertCircle, Sparkles, ShieldCheck } from 'lucide-react';
+import { safeFetch } from '../utils/api';
 
 export default function AdminLoginModal({ isOpen, onClose, onLoginSuccess }) {
   if (!isOpen) return null;
@@ -15,16 +16,11 @@ export default function AdminLoginModal({ isOpen, onClose, onLoginSuccess }) {
     setError('');
 
     try {
-      const res = await fetch('/api/auth/login', {
+      const data = await safeFetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Authentication failed. Please verify credentials.');
-      }
 
       // Store auth session
       localStorage.setItem('admin_auth_token', data.token);
@@ -45,7 +41,7 @@ export default function AdminLoginModal({ isOpen, onClose, onLoginSuccess }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
         {/* Header */}
         <div className="px-6 py-5 bg-gradient-to-r from-slate-900 to-sky-950 text-white flex items-center justify-between">

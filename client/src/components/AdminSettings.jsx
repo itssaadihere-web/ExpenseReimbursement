@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Save, Fuel, Gauge, Key, Mail, CheckCircle, RefreshCw } from 'lucide-react';
+import { safeFetch } from '../utils/api';
 
 export default function AdminSettings({ onSettingsUpdated }) {
   const [settings, setSettings] = useState({
-    petrol_rate: '267.50',
-    mileage_km_per_liter: '10.0',
+    petrol_rate: '3.50',
+    mileage_km_per_gallon: '30.0',
+    mileage_km_per_liter: '30.0',
     google_maps_key: '',
     smtp_host: '',
     smtp_port: '587',
@@ -17,14 +19,13 @@ export default function AdminSettings({ onSettingsUpdated }) {
   const [savedSuccess, setSavedSuccess] = useState(false);
 
   useEffect(() => {
-    fetch('/api/settings')
-      .then(res => res.json())
+    safeFetch('/api/settings')
       .then(data => {
         if (data.success && data.settings) {
           setSettings(prev => ({ ...prev, ...data.settings }));
         }
       })
-      .catch(err => console.warn('Error loading settings:', err))
+      .catch(err => console.warn('Error loading settings:', err.message))
       .finally(() => setLoading(false));
   }, []);
 
@@ -38,12 +39,11 @@ export default function AdminSettings({ onSettingsUpdated }) {
     setSavedSuccess(false);
 
     try {
-      const res = await fetch('/api/settings', {
+      const data = await safeFetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings)
       });
-      const data = await res.json();
       if (data.success) {
         setSavedSuccess(true);
         if (onSettingsUpdated) onSettingsUpdated(data.settings);
@@ -58,8 +58,7 @@ export default function AdminSettings({ onSettingsUpdated }) {
 
   const handleFetchTariff = async () => {
     try {
-      const res = await fetch('/api/petrol-rate/fetch-latest', { method: 'POST' });
-      const data = await res.json();
+      const data = await safeFetch('/api/petrol-rate/fetch-latest', { method: 'POST' });
       if (data.success && data.data) {
         handleChange('petrol_rate', String(data.data.rate));
         alert(`Checked latest rate: $${data.data.rate} / Gallon (${data.data.source})`);

@@ -144,11 +144,11 @@ export default function RouteMap({ home, stops = [], polyline = [], height = '36
   }, [home, stops, polyline]);
 
   return (
-    <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50">
+    <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50 isolate z-0">
       <div ref={mapContainerRef} style={{ height, width: '100%' }} />
       
       {/* Route Legend Overlay */}
-      <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-xs px-3 py-1.5 rounded-lg border border-slate-200 text-xs shadow-xs flex items-center gap-3 z-[1000]">
+      <div className="absolute bottom-3 left-3 bg-white/90 backdrop-blur-xs px-3 py-1.5 rounded-lg border border-slate-200 text-xs shadow-xs flex items-center gap-3 z-10 pointer-events-none">
         <div className="flex items-center gap-1.5">
           <span className="w-3 h-3 rounded-full bg-emerald-600 inline-block"></span>
           <span className="font-medium text-slate-700">Home (Origin & Return)</span>

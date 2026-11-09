@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import LocationInput from './LocationInput';
 import RouteMap from './RouteMap';
+import { safeFetch } from '../utils/api';
 
 export default function UserForm({ petrolRate, onClaimSubmitted }) {
   // Form state defaulted to US locations
@@ -174,15 +175,10 @@ export default function UserForm({ petrolRate, onClaimSubmitted }) {
         formData.append('receipt', receiptFile);
       }
 
-      const res = await fetch('/api/claims', {
+      const data = await safeFetch('/api/claims', {
         method: 'POST',
         body: formData
       });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || 'Failed to submit claim');
-      }
 
       setSubmitResult(data.claim);
       if (onClaimSubmitted) onClaimSubmitted(data.claim);

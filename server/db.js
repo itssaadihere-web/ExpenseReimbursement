@@ -95,10 +95,14 @@ try {
 const jsonDbPath = path.join(dataDir, 'db.json');
 let jsonData = {
   settings: {
-    petrol_rate: '267.50',
-    mileage_km_per_liter: '10.0',
-    currency: 'PKR',
-    country: 'Pakistan'
+    petrol_rate: '3.50',
+    gas_rate: '3.50',
+    mileage_km_per_gallon: '30.0',
+    mileage_km_per_liter: '30.0',
+    currency: 'USD',
+    currency_symbol: '$',
+    fuel_unit: 'Gallon',
+    country: 'United States'
   },
   claims: [],
   emails: []
@@ -107,7 +111,12 @@ let jsonData = {
 if (useJsonStore) {
   if (fs.existsSync(jsonDbPath)) {
     try {
-      jsonData = JSON.parse(fs.readFileSync(jsonDbPath, 'utf8'));
+      const parsed = JSON.parse(fs.readFileSync(jsonDbPath, 'utf8'));
+      jsonData = {
+        ...jsonData,
+        ...parsed,
+        settings: { ...jsonData.settings, ...(parsed.settings || {}) }
+      };
     } catch (e) {
       console.error('Failed to parse existing json db:', e);
     }
@@ -145,9 +154,11 @@ const db = {
   getAllClaims() {
     if (!useJsonStore) {
       const claims = dbInstance.prepare('SELECT * FROM claims ORDER BY created_at DESC').all();
-      return claims.map(this._formatClaim);
+      return claims.map(c => this._formatClaim(c));
     }
-    return [...jsonData.claims].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    return [...jsonData.claims]
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .map(c => this._formatClaim(c));
   },
 
   getClaimById(id) {
@@ -155,7 +166,8 @@ const db = {
       const row = dbInstance.prepare('SELECT * FROM claims WHERE id = ?').get(id);
       return row ? this._formatClaim(row) : null;
     }
-    return jsonData.claims.find(c => c.id === id) || null;
+    const row = jsonData.claims.find(c => c.id === id) || null;
+    return row ? this._formatClaim(row) : null;
   },
 
   createClaim(claim) {

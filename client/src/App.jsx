@@ -21,6 +21,7 @@ import AutomationReports from './components/AutomationReports';
 import EmailOutbox from './components/EmailOutbox';
 import AdminSettings from './components/AdminSettings';
 import AdminLoginModal from './components/AdminLoginModal';
+import { safeFetch } from './utils/api';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('user_form'); // 'user_form' | 'admin_dashboard' | 'automation_reports' | 'email_outbox' | 'settings'
@@ -72,26 +73,24 @@ export default function App() {
 
   const fetchClaims = async () => {
     try {
-      const res = await fetch('/api/claims');
-      const data = await res.json();
+      const data = await safeFetch('/api/claims');
       if (data.success) {
         setClaims(data.claims || []);
         setStats(data.stats || {});
       }
     } catch (err) {
-      console.warn('Error fetching claims:', err);
+      console.warn('Error fetching claims:', err.message);
     }
   };
 
   const fetchPetrolRate = async () => {
     try {
-      const res = await fetch('/api/petrol-rate');
-      const data = await res.json();
+      const data = await safeFetch('/api/petrol-rate');
       if (data.success && data.data) {
         setPetrolRate(data.data.rate);
       }
     } catch (err) {
-      console.warn('Error fetching gas rate:', err);
+      console.warn('Error fetching gas rate:', err.message);
     }
   };
 
@@ -108,8 +107,7 @@ export default function App() {
   // Handle run automation
   const handleRunAutomation = async (claimId) => {
     try {
-      const res = await fetch(`/api/claims/${claimId}/run-automation`, { method: 'POST' });
-      const data = await res.json();
+      const data = await safeFetch(`/api/claims/${claimId}/run-automation`, { method: 'POST' });
       if (data.success) {
         showToast(`Automation executed for Claim ${claimId}!`);
         await fetchClaims();
@@ -126,12 +124,11 @@ export default function App() {
   // Handle approve
   const handleApprove = async (claimId, approvedAmount, adminNotes) => {
     try {
-      const res = await fetch(`/api/claims/${claimId}/approve`, {
+      const data = await safeFetch(`/api/claims/${claimId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ approved_amount: approvedAmount, admin_notes: adminNotes })
       });
-      const data = await res.json();
       if (data.success) {
         showToast(`Claim ${claimId} approved ($${Number(approvedAmount).toLocaleString('en-US', { minimumFractionDigits: 2 })}) and automated email dispatched!`);
         await fetchClaims();
@@ -148,12 +145,11 @@ export default function App() {
   // Handle reject
   const handleReject = async (claimId, adminNotes) => {
     try {
-      const res = await fetch(`/api/claims/${claimId}/reject`, {
+      const data = await safeFetch(`/api/claims/${claimId}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ admin_notes: adminNotes })
       });
-      const data = await res.json();
       if (data.success) {
         showToast(`Claim ${claimId} rejected and notification email dispatched.`, 'info');
         await fetchClaims();
@@ -340,7 +336,7 @@ export default function App() {
 
       {/* Toast Alert Notification */}
       {toast && (
-        <div className="fixed bottom-5 right-5 z-50 animate-slide-up">
+        <div className="fixed bottom-5 right-5 z-[110] animate-slide-up">
           <div className={`flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl text-xs font-semibold text-white ${
             toast.type === 'error' ? 'bg-red-600' : toast.type === 'info' ? 'bg-sky-600' : 'bg-emerald-600'
           }`}>

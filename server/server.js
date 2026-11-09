@@ -138,6 +138,17 @@ async function executeAutomation(claim) {
 
 // ================= API ROUTES ================= //
 
+// Route compatibility for proxies & serverless rewrites (e.g. Vercel)
+// If request arrives as /claims instead of /api/claims, auto-prepend /api
+const apiEndpoints = ['health', 'auth', 'locations', 'settings', 'petrol-rate', 'claims', 'emails'];
+app.use((req, res, next) => {
+  const seg = req.url.split('/')[1]?.split('?')[0];
+  if (apiEndpoints.includes(seg)) {
+    req.url = '/api' + req.url;
+  }
+  next();
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -493,6 +504,11 @@ app.get('/api/emails', (req, res) => {
   }
 });
 
+// JSON 404 for unmatched API routes - ALWAYS return JSON, never HTML
+app.use('/api', (req, res) => {
+  res.status(404).json({ success: false, error: `API endpoint not found: ${req.method} ${req.originalUrl}` });
+});
+
 // Serve frontend in production
 const clientDist = fs.existsSync(path.join(__dirname, '..', 'dist'))
   ? path.join(__dirname, '..', 'dist')
@@ -506,6 +522,16 @@ if (fs.existsSync(clientDist)) {
     next();
   });
 }
+
+// Global error handler
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  if (res.headersSent) return next(err);
+  res.status(err.status || 500).json({
+    success: false,
+    error: err.message || 'Internal server error'
+  });
+});
 
 // Seed demo data if database has no claims or needs US sample
 async function seedInitialDemoData() {

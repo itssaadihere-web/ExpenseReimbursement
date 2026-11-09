@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, CheckCircle2, ExternalLink, RefreshCw, Send, Clock, User } from 'lucide-react';
+import { safeFetch } from '../utils/api';
 
 export default function EmailOutbox() {
   const [emails, setEmails] = useState([]);
@@ -9,8 +10,7 @@ export default function EmailOutbox() {
   const fetchEmails = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/emails');
-      const data = await res.json();
+      const data = await safeFetch('/api/emails');
       if (data.success) {
         setEmails(data.emails || []);
         if (data.emails && data.emails.length > 0 && !selectedEmail) {
@@ -18,7 +18,7 @@ export default function EmailOutbox() {
         }
       }
     } catch (err) {
-      console.warn('Error fetching email logs:', err);
+      console.warn('Error fetching email logs:', err.message);
     } finally {
       setLoading(false);
     }

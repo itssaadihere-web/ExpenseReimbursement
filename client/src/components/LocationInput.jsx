@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MapPin, Search, Loader2, Check, X } from 'lucide-react';
+import { safeFetch } from '../utils/api';
 
 export default function LocationInput({
   value,
@@ -44,15 +45,14 @@ export default function LocationInput({
 
     setLoading(true);
     try {
-      const res = await fetch(`/api/locations/search?q=${encodeURIComponent(searchQuery)}`);
-      const data = await res.json();
+      const data = await safeFetch(`/api/locations/search?q=${encodeURIComponent(searchQuery)}`);
       if (data.success && Array.isArray(data.results)) {
         setSuggestions(data.results);
       } else {
         setSuggestions([]);
       }
     } catch (err) {
-      console.warn('Location suggestion lookup error:', err);
+      console.warn('Location suggestion lookup error:', err.message);
       setSuggestions([]);
     } finally {
       setLoading(false);
