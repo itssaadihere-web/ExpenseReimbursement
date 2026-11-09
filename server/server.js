@@ -494,7 +494,9 @@ app.get('/api/emails', (req, res) => {
 });
 
 // Serve frontend in production
-const clientDist = path.join(__dirname, '..', 'client', 'dist');
+const clientDist = fs.existsSync(path.join(__dirname, '..', 'dist'))
+  ? path.join(__dirname, '..', 'dist')
+  : path.join(__dirname, '..', 'client', 'dist');
 if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
   app.use((req, res, next) => {

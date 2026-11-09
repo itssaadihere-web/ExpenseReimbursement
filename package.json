@@ -1,8 +1,11 @@
 {
   "name": "expense-reimbursement",
   "version": "1.0.0",
-  "description": "Automated Fuel Expense Reimbursement with GPS Distance Matrix, 10km/L policy, and Automated Email Revert",
+  "description": "Automated Fuel Expense Reimbursement with GPS Distance Matrix, 30km/gallon policy, and Automated Email Revert",
   "main": "server/server.js",
+  "workspaces": [
+    "client"
+  ],
   "scripts": {
     "server": "node server/server.js",
     "client": "npm run dev --prefix client",
