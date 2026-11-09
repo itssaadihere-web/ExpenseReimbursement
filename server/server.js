@@ -16,6 +16,16 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// URL normalization for Vercel Serverless Functions:
+// In serverless environments, requests routed to /api or [...path].js might have the '/api' prefix stripped.
+// This ensures routes like /api/claims and /claims both match successfully.
+app.use((req, res, next) => {
+  if (!req.url.startsWith('/api') && !req.url.startsWith('/uploads')) {
+    req.url = '/api' + (req.url.startsWith('/') ? req.url : '/' + req.url);
+  }
+  next();
+});
+
 // Serve uploaded receipts
 app.use('/uploads', express.static(uploadsDir));
 
