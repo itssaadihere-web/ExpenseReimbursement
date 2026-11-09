@@ -48,14 +48,16 @@ export default function AdminLoginModal({ isOpen, onClose, onLoginSuccess }) {
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-5 bg-gradient-to-r from-slate-900 to-blue-950 text-white flex items-center justify-between">
+        <div className="px-6 py-5 bg-gradient-to-r from-slate-900 to-sky-950 text-white flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-400/30 flex items-center justify-center text-blue-300">
-              <ShieldCheck className="w-5 h-5" />
+            <div className="flex items-center gap-2 bg-white px-2.5 py-1 rounded-xl shadow-xs">
+              <img src="/logo-mobily.png" alt="Mobily" className="h-7 w-auto object-contain" />
+              <div className="h-4 w-[1px] bg-slate-300" />
+              <img src="/logo-retailer.png" alt="Retailer" className="h-5 w-auto object-contain" />
             </div>
             <div>
-              <h3 className="font-extrabold text-base tracking-tight">Admin Portal Login</h3>
-              <p className="text-xs text-slate-400">Restricted to finance & management personnel</p>
+              <h3 className="font-extrabold text-sm tracking-tight text-white">Admin Authentication</h3>
+              <p className="text-[11px] text-slate-400">Finance & Management Portal</p>
             </div>
           </div>
 

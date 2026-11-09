@@ -201,11 +201,13 @@ export default function UserForm({ petrolRate, onClaimSubmitted }) {
         
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="space-y-3">
-            <div className="flex items-center gap-3 bg-white/15 backdrop-blur-md px-3.5 py-1.5 rounded-full w-fit">
-              <img src="/logo-mobily.png" alt="Mobily" className="h-5 w-auto object-contain bg-white rounded-sm p-0.5" />
-              <div className="h-3.5 w-[1px] bg-white/40" />
-              <img src="/logo-retailer.png" alt="Retailer" className="h-4 w-auto object-contain brightness-0 invert" />
-              <span className="text-[11px] font-bold text-white tracking-wide uppercase">Reimbursement Portal</span>
+            <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-2xl shadow-sm border border-white/80 w-fit">
+              <img src="/logo-mobily.png" alt="Mobily" className="h-9 sm:h-10 w-auto object-contain" />
+              <div className="h-6 w-[1.5px] bg-slate-200" />
+              <img src="/logo-retailer.png" alt="Retailer" className="h-7 sm:h-8 w-auto object-contain" />
+              <span className="text-[11px] font-extrabold text-slate-800 tracking-wider uppercase border-l border-slate-200 pl-3">
+                Official Retailer Portal
+              </span>
             </div>
             
             <h1 className="text-2xl md:text-3xl font-black tracking-tight">

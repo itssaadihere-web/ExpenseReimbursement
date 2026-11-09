@@ -172,41 +172,44 @@ export default function App() {
       {/* Top Navbar */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20">
-            {/* Business Brand Logos */}
-            <div className="flex items-center gap-4">
-              {/* Mobily Logo */}
-              <div className="flex items-center">
-                <img 
-                  src="/logo-mobily.png" 
-                  alt="Mobily Logo" 
-                  className="h-12 w-auto object-contain drop-shadow-xs"
-                />
-              </div>
+          <div className="flex items-center justify-between min-h-[96px] py-3">
+            {/* Business Brand Logos - High Visibility Container */}
+            <div className="flex items-center gap-4 sm:gap-6">
+              {/* Clean High-Contrast Brand Card */}
+              <div className="flex items-center gap-3 sm:gap-4 bg-slate-50 border border-slate-200/80 p-2 sm:p-2.5 rounded-2xl shadow-xs">
+                {/* Mobily Logo */}
+                <div className="flex items-center justify-center bg-white rounded-xl p-1 shadow-2xs border border-slate-100">
+                  <img 
+                    src="/logo-mobily.png" 
+                    alt="Mobily Logo" 
+                    className="h-14 sm:h-16 w-auto object-contain drop-shadow-xs"
+                  />
+                </div>
 
-              {/* Divider */}
-              <div className="h-8 w-[1px] bg-slate-200 hidden sm:block" />
+                {/* Divider */}
+                <div className="h-10 w-[1.5px] bg-slate-300" />
 
-              {/* Retailer Logo */}
-              <div className="flex items-center">
-                <img 
-                  src="/logo-retailer.png" 
-                  alt="Authorized Retailer Logo" 
-                  className="h-8 sm:h-9 w-auto object-contain"
-                />
+                {/* Retailer Logo */}
+                <div className="flex items-center justify-center bg-white rounded-xl px-2.5 py-1 shadow-2xs border border-slate-100">
+                  <img 
+                    src="/logo-retailer.png" 
+                    alt="Authorized Retailer Logo" 
+                    className="h-10 sm:h-12 w-auto object-contain"
+                  />
+                </div>
               </div>
 
               {/* Title & Badge */}
               <div className="hidden lg:block pl-2 border-l border-slate-200">
                 <div className="flex items-center gap-2">
-                  <h1 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                  <h1 className="text-base font-extrabold text-slate-900 tracking-tight">
                     Travel & Fuel Reimbursement
                   </h1>
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-lime-100 text-lime-800 px-2 py-0.5 rounded-full border border-lime-300">
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-lime-100 text-lime-800 px-2.5 py-0.5 rounded-full border border-lime-300">
                     30 KM/Gal Limit
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-xs text-slate-500 mt-0.5">
                   Automated GPS Matrix &bull; U.S. Benchmark &bull; Instant Email Revert
                 </p>
               </div>
@@ -215,7 +218,7 @@ export default function App() {
             {/* Right actions: Gas rate & Admin Login/Logout */}
             <div className="flex items-center gap-3">
               {/* US Gas Benchmark Badge */}
-              <div className="hidden sm:flex items-center gap-2 bg-sky-50 border border-sky-200 px-3 py-1.5 rounded-xl text-xs">
+              <div className="hidden sm:flex items-center gap-2 bg-sky-50 border border-sky-200 px-3.5 py-2 rounded-xl text-xs">
                 <span className="text-sky-700 font-bold">⛽ Gas Benchmark:</span>
                 <span className="font-extrabold text-slate-900">${Number(petrolRate || 3.50).toFixed(2)} / Gallon</span>
               </div>
@@ -225,7 +228,7 @@ export default function App() {
                 onClick={loadData}
                 disabled={loading}
                 title="Refresh system data"
-                className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+                className="p-2.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors border border-slate-200"
               >
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
@@ -252,7 +255,7 @@ export default function App() {
               ) : (
                 <button
                   onClick={() => setIsLoginModalOpen(true)}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-700 hover:to-sky-800 text-white rounded-xl text-xs font-bold shadow-sm transition-all"
+                  className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-700 hover:to-sky-800 text-white rounded-xl text-xs font-bold shadow-sm transition-all"
                 >
                   <Lock className="w-3.5 h-3.5" />
                   <span>Admin Login</span>
