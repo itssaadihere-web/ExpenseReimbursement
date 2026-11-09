@@ -10,10 +10,11 @@ import {
   CheckCircle, 
   AlertTriangle,
   Download,
-  Search
+  Search,
+  FileSpreadsheet
 } from 'lucide-react';
 
-export default function AutomationReports({ claims = [], petrolRate }) {
+export default function AutomationReports({ claims = [], petrolRate, onViewExpenseReport }) {
   const [selectedClaimId, setSelectedClaimId] = useState(
     claims.length > 0 ? claims[0].id : null
   );
@@ -52,13 +53,34 @@ export default function AutomationReports({ claims = [], petrolRate }) {
           </p>
         </div>
 
-        <button
-          onClick={handlePrint}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors shrink-0"
-        >
-          <Printer className="w-4 h-4" />
-          Print / Export Audit Report
-        </button>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {onViewExpenseReport && (
+            <button
+              onClick={() => onViewExpenseReport(activeClaim?.id)}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-[#993300] hover:bg-[#802a00] text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-amber-300" />
+              Official Expense Report (Web View)
+            </button>
+          )}
+
+          <a
+            href={`/api/reports/expense-report/excel?claimId=${activeClaim?.id || ''}`}
+            download
+            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Excel Export (.xlsx)
+          </a>
+
+          <button
+            onClick={handlePrint}
+            className="inline-flex items-center gap-2 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+          >
+            <Printer className="w-4 h-4" />
+            Print
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

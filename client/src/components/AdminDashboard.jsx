@@ -13,7 +13,9 @@ import {
   Mail, 
   MapPin, 
   AlertTriangle,
-  ArrowRight
+  ArrowRight,
+  FileSpreadsheet,
+  Download
 } from 'lucide-react';
 import ClaimDetailModal from './ClaimDetailModal';
 
@@ -24,7 +26,8 @@ export default function AdminDashboard({
   onRefresh,
   onRunAutomation,
   onApprove,
-  onReject
+  onReject,
+  onViewExpenseReport
 }) {
   const [selectedClaim, setSelectedClaim] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -258,10 +261,29 @@ export default function AdminDashboard({
                             <span>Audit</span>
                           </button>
 
+                          {onViewExpenseReport && (
+                            <button
+                              onClick={() => onViewExpenseReport(claim.id)}
+                              title="View Official Expense Report (Web View)"
+                              className="p-1.5 bg-amber-50 hover:bg-amber-100 text-[#993300] border border-amber-200 rounded-lg transition-colors"
+                            >
+                              <FileSpreadsheet className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+
+                          <a
+                            href={`/api/reports/expense-report/excel?claimId=${claim.id}`}
+                            download
+                            title="Download Excel Report (.xlsx)"
+                            className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg transition-colors"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </a>
+
                           <button
                             onClick={() => onRunAutomation(claim.id)}
                             title="Run Distance & Fuel Automation"
-                            className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
+                            className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors"
                           >
                             <Play className="w-3.5 h-3.5 text-blue-600" />
                           </button>
@@ -288,6 +310,7 @@ export default function AdminDashboard({
         <ClaimDetailModal
           claim={selectedClaim}
           onClose={() => setSelectedClaim(null)}
+          onViewExpenseReport={onViewExpenseReport}
           onRunAutomation={async (id) => {
             const updated = await onRunAutomation(id);
             if (updated) setSelectedClaim(updated);

@@ -16,7 +16,9 @@ import {
   Clock,
   Sparkles,
   Info,
-  Fuel
+  Fuel,
+  FileSpreadsheet,
+  Download
 } from 'lucide-react';
 import RouteMap from './RouteMap';
 
@@ -26,6 +28,7 @@ export default function ClaimDetailModal({
   onRunAutomation, 
   onApprove, 
   onReject,
+  onViewExpenseReport,
   loading 
 }) {
   if (!claim) return null;
@@ -112,12 +115,38 @@ export default function ClaimDetailModal({
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            {onViewExpenseReport && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onViewExpenseReport(claim.id);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#993300] hover:bg-[#802a00] text-white rounded-lg text-xs font-bold shadow-2xs transition-colors"
+                title="View in Official Expense Report Web View"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-300" />
+                <span className="hidden sm:inline">Expense Report</span>
+              </button>
+            )}
+
+            <a
+              href={`/api/reports/expense-report/excel?claimId=${claim.id}`}
+              download
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors"
+              title="Download Excel (.xlsx) Report"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Excel (.xlsx)</span>
+            </a>
+
+            <button
+              onClick={onClose}
+              className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-200 transition-colors ml-1"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Modal Navigation Tabs */}

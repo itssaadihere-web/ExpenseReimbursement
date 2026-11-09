@@ -16,13 +16,16 @@ import {
   AlertCircle,
   Sparkles,
   MapPin,
-  Fuel
+  Fuel,
+  FileSpreadsheet,
+  Download,
+  ExternalLink
 } from 'lucide-react';
 import LocationInput from './LocationInput';
 import RouteMap from './RouteMap';
 import { safeFetch } from '../utils/api';
 
-export default function UserForm({ petrolRate, onClaimSubmitted }) {
+export default function UserForm({ petrolRate, onClaimSubmitted, onViewExpenseReport }) {
   // Form state defaulted to US locations
   const [employeeName, setEmployeeName] = useState('');
   const [employeeId, setEmployeeId] = useState('');
@@ -215,6 +218,17 @@ export default function UserForm({ petrolRate, onClaimSubmitted }) {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+            {onViewExpenseReport && (
+              <button
+                type="button"
+                onClick={() => onViewExpenseReport()}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-[#993300] text-white hover:bg-[#802a00] rounded-xl text-xs font-bold shadow-md transition-all border border-white/20"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-amber-300" />
+                View Official Expense Report
+              </button>
+            )}
+
             <button
               type="button"
               onClick={handleFillDemo}
@@ -284,6 +298,26 @@ export default function UserForm({ petrolRate, onClaimSubmitted }) {
               </div>
 
               <div className="flex flex-wrap items-center gap-3 pt-2">
+                {onViewExpenseReport && (
+                  <button
+                    type="button"
+                    onClick={() => onViewExpenseReport(submitResult.id)}
+                    className="px-4 py-2 bg-[#993300] hover:bg-[#802a00] text-white text-xs font-bold rounded-lg transition-colors shadow-xs flex items-center gap-1.5"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5" />
+                    <span>View Official Expense Report</span>
+                  </button>
+                )}
+
+                <a
+                  href={`/api/reports/expense-report/excel?claimId=${submitResult.id}`}
+                  download
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg transition-colors shadow-xs flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Download Excel (.xlsx)</span>
+                </a>
+
                 <button
                   type="button"
                   onClick={() => {
@@ -292,13 +326,10 @@ export default function UserForm({ petrolRate, onClaimSubmitted }) {
                     setReceiptFile(null);
                     setReceiptPreview(null);
                   }}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors shadow-xs"
+                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-lg transition-colors border border-slate-300"
                 >
                   Submit Another Claim
                 </button>
-                <span className="text-xs text-slate-500">
-                  Admin will review this claim. Once approved, you will receive an automated confirmation email at <strong>{submitResult.employee_email}</strong>.
-                </span>
               </div>
             </div>
           </div>
