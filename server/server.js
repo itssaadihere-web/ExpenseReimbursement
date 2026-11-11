@@ -422,7 +422,7 @@ app.get('/api/locations/search', async (req, res) => {
 // Get/Update Settings
 app.get('/api/settings', async (req, res) => {
   try {
-    const settings = await storage.getSettings();
+    const settings = await dataStore.getSettings();
     res.json({ success: true, settings });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -433,9 +433,9 @@ app.post('/api/settings', async (req, res) => {
   try {
     const updates = req.body || {};
     for (const [key, val] of Object.entries(updates)) {
-      await storage.setSetting(key, val);
+      await dataStore.setSetting(key, val);
     }
-    const current = await storage.getSettings();
+    const current = await dataStore.getSettings();
     res.json({ success: true, settings: current });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -558,7 +558,7 @@ app.post('/api/claims', upload.any(), async (req, res) => {
       ? 'Awaiting Hotel Booking Team night-stay authorization verification' 
       : 'Awaiting Surveillance Team attendance & camera verification';
 
-    const created = await storage.createClaim({
+    const created = await dataStore.createClaim({
       expense_type: isFood ? 'food' : 'fuel',
       employee_name: body.employee_name,
       employee_id: body.employee_id,
@@ -611,7 +611,7 @@ app.post('/api/claims', upload.any(), async (req, res) => {
 // List all claims with stats (Admin View)
 app.get('/api/claims', async (req, res) => {
   try {
-    const claims = await storage.getAllClaims();
+    const claims = await dataStore.getAllClaims();
 
     let totalClaimed = 0;
     let totalCalculated = 0;
@@ -657,7 +657,7 @@ app.get('/api/claims', async (req, res) => {
 // Get single claim
 app.get('/api/claims/:id', async (req, res) => {
   try {
-    const claim = await storage.getClaimById(req.params.id);
+    const claim = await dataStore.getClaimById(req.params.id);
     if (!claim) {
       return res.status(404).json({ success: false, error: 'Claim not found' });
     }
@@ -670,7 +670,7 @@ app.get('/api/claims/:id', async (req, res) => {
 // Run or Re-run automation on a claim
 app.post('/api/claims/:id/run-automation', async (req, res) => {
   try {
-    const claim = await storage.getClaimById(req.params.id);
+    const claim = await dataStore.getClaimById(req.params.id);
     if (!claim) {
       return res.status(404).json({ success: false, error: 'Claim not found' });
     }
@@ -690,7 +690,7 @@ app.post('/api/claims/:id/run-automation', async (req, res) => {
 // Surveillance Team Verification endpoint (Fuel Claims)
 app.post('/api/claims/:id/verify-surveillance', async (req, res) => {
   try {
-    const claim = await storage.getClaimById(req.params.id);
+    const claim = await dataStore.getClaimById(req.params.id);
     if (!claim) {
       return res.status(404).json({ success: false, error: 'Claim not found' });
     }
@@ -698,7 +698,7 @@ app.post('/api/claims/:id/verify-surveillance', async (req, res) => {
     const { status, notes, verified_by } = req.body || {};
     const isVerified = status === 'verified';
 
-    const updated = await storage.updateClaim(claim.id, {
+    const updated = await dataStore.updateClaim(claim.id, {
       surveillance_status: isVerified ? 'verified' : 'rejected',
       surveillance_notes: notes || '',
       surveillance_checked_by: verified_by || 'Surveillance Security Officer',
@@ -723,7 +723,7 @@ app.post('/api/claims/:id/verify-surveillance', async (req, res) => {
 // Hotel Booking Team Verification endpoint (Food Claims)
 app.post('/api/claims/:id/verify-hotel', async (req, res) => {
   try {
-    const claim = await storage.getClaimById(req.params.id);
+    const claim = await dataStore.getClaimById(req.params.id);
     if (!claim) {
       return res.status(404).json({ success: false, error: 'Claim not found' });
     }
@@ -731,7 +731,7 @@ app.post('/api/claims/:id/verify-hotel', async (req, res) => {
     const { status, notes, verified_by, night_stay_verified } = req.body || {};
     const isVerified = status === 'verified';
 
-    const updated = await storage.updateClaim(claim.id, {
+    const updated = await dataStore.updateClaim(claim.id, {
       hotel_verification_status: isVerified ? 'verified' : 'rejected',
       hotel_notes: notes || '',
       hotel_checked_by: verified_by || 'Hotel Booking Specialist',
@@ -757,7 +757,7 @@ app.post('/api/claims/:id/verify-hotel', async (req, res) => {
 // Approve claim and send automated email (Admin Decision with Standard & Custom Comments)
 app.post('/api/claims/:id/approve', async (req, res) => {
   try {
-    const claim = await storage.getClaimById(req.params.id);
+    const claim = await dataStore.getClaimById(req.params.id);
     if (!claim) {
       return res.status(404).json({ success: false, error: 'Claim not found' });
     }
@@ -770,7 +770,7 @@ app.post('/api/claims/:id/approve', async (req, res) => {
     const adminNotes = req.body.admin_notes || 'Approved as per corporate reimbursement policy.';
 
     // Update claim
-    const updated = await storage.updateClaim(claim.id, {
+    const updated = await dataStore.updateClaim(claim.id, {
       status: 'approved',
       approved_amount: approvedAmount,
       admin_comment_type: adminCommentType,
@@ -789,7 +789,7 @@ app.post('/api/claims/:id/approve', async (req, res) => {
         adminNotes
       });
 
-      await storage.updateClaim(claim.id, {
+      await dataStore.updateClaim(claim.id, {
         email_sent: 1,
         email_sent_at: new Date().toISOString()
       });
@@ -800,7 +800,7 @@ app.post('/api/claims/:id/approve', async (req, res) => {
     res.json({
       success: true,
       message: 'Claim approved successfully and automated email notification dispatched',
-      claim: await storage.getClaimById(claim.id),
+      claim: await dataStore.getClaimById(claim.id),
       email: emailResult
     });
   } catch (err) {
@@ -812,7 +812,7 @@ app.post('/api/claims/:id/approve', async (req, res) => {
 // Reject claim and send automated email
 app.post('/api/claims/:id/reject', async (req, res) => {
   try {
-    const claim = await storage.getClaimById(req.params.id);
+    const claim = await dataStore.getClaimById(req.params.id);
     if (!claim) {
       return res.status(404).json({ success: false, error: 'Claim not found' });
     }
@@ -820,7 +820,7 @@ app.post('/api/claims/:id/reject', async (req, res) => {
     const adminCommentType = req.body.admin_comment_type || 'others';
     const adminNotes = req.body.admin_notes || 'Claim rejected due to policy non-compliance, missing receipts, or failed verification.';
 
-    const updated = await storage.updateClaim(claim.id, {
+    const updated = await dataStore.updateClaim(claim.id, {
       status: 'rejected',
       admin_comment_type: adminCommentType,
       admin_notes: adminNotes,
@@ -837,7 +837,7 @@ app.post('/api/claims/:id/reject', async (req, res) => {
         adminNotes
       });
 
-      await storage.updateClaim(claim.id, {
+      await dataStore.updateClaim(claim.id, {
         email_sent: 1,
         email_sent_at: new Date().toISOString()
       });
@@ -848,7 +848,7 @@ app.post('/api/claims/:id/reject', async (req, res) => {
     res.json({
       success: true,
       message: 'Claim rejected and notification email sent',
-      claim: await storage.getClaimById(claim.id),
+      claim: await dataStore.getClaimById(claim.id),
       email: emailResult
     });
   } catch (err) {
@@ -860,7 +860,7 @@ app.post('/api/claims/:id/reject', async (req, res) => {
 // Get Outbox Emails log
 app.get('/api/emails', async (req, res) => {
   try {
-    const emails = await storage.getEmailLogs();
+    const emails = await dataStore.getEmailLogs();
     res.json({ success: true, emails });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
