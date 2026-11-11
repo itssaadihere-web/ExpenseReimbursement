@@ -17,16 +17,73 @@ async function sendReimbursementEmail({ claim, status, approvedAmount, adminNote
 
   const report = claim.automation_report || {};
   const isApproved = status === 'approved';
+  const isFood = (claim.expense_type || '').toLowerCase() === 'food';
   const statusColor = isApproved ? '#16a34a' : '#dc2626';
-  const statusTitle = isApproved ? 'Reimbursement Approved' : 'Reimbursement Claim Update';
+  const statusTitle = isApproved ? `${isFood ? 'Food' : 'Fuel'} Reimbursement Approved` : `${isFood ? 'Food' : 'Fuel'} Reimbursement Claim Update`;
   
   const stopsList = Array.isArray(claim.stops) 
     ? claim.stops.map(s => s.name || s.displayName).join(' ➔ ')
     : '';
-  const fullRouteSummary = `${claim.home_location} ➔ ${stopsList ? stopsList + ' ➔ ' : ''}${claim.home_location}`;
+  const fullRouteSummary = `${claim.home_location || 'Origin'} ➔ ${stopsList ? stopsList + ' ➔ ' : ''}${claim.home_location || 'Return'}`;
 
   const fuelGallons = Number(claim.fuel_liters || (Number(claim.total_distance_km || 0) / 30)).toFixed(2);
-  const gasPrice = Number(claim.petrol_rate_pkr || 3.50).toFixed(2);
+  const gasPrice = Number(claim.weighted_avg_fuel_rate || claim.petrol_rate_pkr || 3.50).toFixed(2);
+
+  const breakdownRows = isFood ? `
+    <tr>
+      <td style="width: 45%;"><strong>Claim Category:</strong></td>
+      <td>🍔 Official Food / Meal Reimbursement</td>
+    </tr>
+    <tr>
+      <td><strong>Eligibility Basis:</strong></td>
+      <td>Authorized Hotel Overnight Stay (Verified by Hotel Booking Team)</td>
+    </tr>
+    <tr>
+      <td><strong>Night Stay / Location:</strong></td>
+      <td>${claim.night_stay_location || 'Authorized Hotel'} (${claim.nights_count || 1} Night(s))</td>
+    </tr>
+    <tr>
+      <td><strong>Non-Reimbursable Tips Deducted:</strong></td>
+      <td>-$${Number(claim.total_tip_deducted || 0).toFixed(2)} (Tips excluded by corporate policy)</td>
+    </tr>
+    <tr>
+      <td><strong>Eligible Food Amount:</strong></td>
+      <td>$${Number(claim.eligible_food_amount || approvedAmount).toFixed(2)}</td>
+    </tr>
+    <tr style="background: #f8fafc;">
+      <td><strong>Daily Policy Cut-off Rule:</strong></td>
+      <td>Capped at $${settings.food_daily_cutoff_limit || '25.00'}/day allowable limit</td>
+    </tr>
+  ` : `
+    <tr>
+      <td style="width: 45%;"><strong>Claim Category:</strong></td>
+      <td>⛽ Official Travel Fuel Reimbursement</td>
+    </tr>
+    <tr>
+      <td><strong>Route Covered:</strong></td>
+      <td>${fullRouteSummary}</td>
+    </tr>
+    <tr>
+      <td><strong>Total Round-trip Distance:</strong></td>
+      <td><strong>${Number(claim.total_distance_km || 0).toFixed(2)} KM</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Efficiency Benchmark Allowed:</strong></td>
+      <td><strong>${settings.mileage_km_per_gallon || '30.0'} KM / Gallon</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Allowable Fuel Needed:</strong></td>
+      <td>${fuelGallons} Gallons</td>
+    </tr>
+    <tr>
+      <td><strong>Applied Fuel Rate:</strong></td>
+      <td>$${gasPrice} / Gallon (Receipts Weighted Average)</td>
+    </tr>
+    <tr>
+      <td><strong>Surveillance Verification:</strong></td>
+      <td>Attendance & camera footage verified by Surveillance Team</td>
+    </tr>
+  `;
 
   const htmlContent = `
 <!DOCTYPE html>
@@ -61,7 +118,7 @@ async function sendReimbursementEmail({ claim, status, approvedAmount, adminNote
 <body>
   <div class="card">
     <div class="header">
-      <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #38bdf8; font-weight: 700; margin-bottom: 4px;">Automated Travel & Gas Reimbursement System</div>
+      <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #38bdf8; font-weight: 700; margin-bottom: 4px;">Automated Travel & Expense Reimbursement</div>
       <h1>Claim Decision Notification</h1>
       <p>Claim Reference: <strong>${claim.id}</strong></p>
       <div class="badge">${isApproved ? 'Approved for Reimbursement' : 'Claim Rejected / Revised'}</div>
@@ -70,7 +127,7 @@ async function sendReimbursementEmail({ claim, status, approvedAmount, adminNote
     <div class="content">
       <div class="greeting">Dear ${claim.employee_name} (Employee ID: ${claim.employee_id}),</div>
       <p class="intro">
-        Your travel fuel reimbursement request submitted for travel on <strong>${formattedDate}</strong> has been reviewed and verified against our automated GPS route and fuel policy rules (<strong>30 KM / Gallon limit allowed</strong> & national gas tariff benchmark).
+        Your ${isFood ? 'food & meal' : 'travel fuel'} reimbursement request covering <strong>${claim.date_from || formattedDate}</strong> ${claim.date_to && claim.date_to !== claim.date_from ? `to <strong>${claim.date_to}</strong>` : ''} has been reviewed and audited by the verification team and operations management.
       </p>
 
       <div class="amount-box">
@@ -78,7 +135,7 @@ async function sendReimbursementEmail({ claim, status, approvedAmount, adminNote
         <div class="amount-value">$${Number(approvedAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
         <div class="amount-sub">
           Original Claimed: $${Number(claim.claimed_amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} 
-          ${Number(approvedAmount) < Number(claim.claimed_amount) ? `(Policy adjustment: -$${(Number(claim.claimed_amount) - Number(approvedAmount)).toLocaleString('en-US', { minimumFractionDigits: 2 })})` : ''}
+          ${Number(approvedAmount) < Number(claim.claimed_amount) ? `(Adjustment: -$${(Number(claim.claimed_amount) - Number(approvedAmount)).toLocaleString('en-US', { minimumFractionDigits: 2 })})` : ''}
         </div>
       </div>
 
@@ -86,34 +143,11 @@ async function sendReimbursementEmail({ claim, status, approvedAmount, adminNote
         <table>
           <thead>
             <tr>
-              <th colspan="2">Automation Calculation Breakdown</th>
+              <th colspan="2">Audit & Policy Calculation Breakdown</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td style="width: 45%;"><strong>Route Covered:</strong></td>
-              <td>${fullRouteSummary}</td>
-            </tr>
-            <tr>
-              <td><strong>Total Verified Round-trip Distance:</strong></td>
-              <td><strong>${Number(claim.total_distance_km || 0).toFixed(2)} KM</strong></td>
-            </tr>
-            <tr>
-              <td><strong>Efficiency Benchmark Allowed:</strong></td>
-              <td><strong>30.0 KM / Gallon</strong></td>
-            </tr>
-            <tr>
-              <td><strong>Allowable Fuel Entitlement:</strong></td>
-              <td>${fuelGallons} Gallons <span style="font-size: 11px; color: #64748b;">(${Number(claim.total_distance_km || 0).toFixed(1)} km ÷ 30 km/gal)</span></td>
-            </tr>
-            <tr>
-              <td><strong>Applied Gas Price per Gallon:</strong></td>
-              <td>$${gasPrice} / Gallon <span style="font-size: 11px; color: #64748b;">(National Benchmark)</span></td>
-            </tr>
-            <tr style="background: #f8fafc;">
-              <td><strong>Calculation Formula:</strong></td>
-              <td>(${Number(claim.total_distance_km || 0).toFixed(1)} km ÷ 30 km/gal) × $${gasPrice}/gal = <strong>$${Number(claim.calculated_amount || approvedAmount).toFixed(2)}</strong></td>
-            </tr>
+            ${breakdownRows}
           </tbody>
         </table>
       </div>

@@ -58,18 +58,138 @@ const upload = multer({
   }
 });
 
-// Helper: Run calculation automation on a claim
+// Helper: Run calculation automation on a claim (Fuel or Food)
 async function executeAutomation(claim) {
   const settings = db.getSettings();
+  const isFood = (claim.expense_type || '').toLowerCase() === 'food';
+  const claimed = Number(claim.claimed_amount) || 0;
+
+  if (isFood) {
+    // ==================== FOOD EXPENSE CALCULATION ==================== //
+    const receipts = Array.isArray(claim.receipts) ? claim.receipts : [];
+    let totalBilled = 0;
+    let totalTipsDeducted = 0;
+    let totalNetEligible = 0;
+
+    receipts.forEach(r => {
+      const bill = parseFloat(r.food_bill_amount || r.amount) || 0;
+      const tip = parseFloat(r.tip_amount || r.tip) || 0;
+      const net = Math.max(0, bill - tip);
+      totalBilled += bill;
+      totalTipsDeducted += tip;
+      totalNetEligible += net;
+    });
+
+    if (totalBilled === 0 && claimed > 0) {
+      totalBilled = claimed;
+      totalNetEligible = claimed;
+    }
+
+    const foodDailyCutoff = parseFloat(settings.food_daily_cutoff_limit) || 25.0;
+    const d1 = new Date(claim.date_from || claim.travel_date || Date.now());
+    const d2 = new Date(claim.date_to || d1);
+    const dayCount = Math.max(1, Math.round(Math.abs((d2 - d1) / (24 * 60 * 60 * 1000))) + 1);
+    const allowableCeiling = Number((dayCount * foodDailyCutoff).toFixed(2));
+    const calculatedAmount = Number(Math.min(totalNetEligible, allowableCeiling).toFixed(2));
+    const variance = Number((claimed - calculatedAmount).toFixed(2));
+    const isOverClaimed = variance > 0;
+
+    const automationReport = {
+      generatedAt: new Date().toISOString(),
+      expenseType: 'food',
+      calculationEngine: 'Food Night-Stay & Daily Cut-off Audit Engine',
+      employee: {
+        name: claim.employee_name,
+        id: claim.employee_id,
+        email: claim.employee_email
+      },
+      dateRange: {
+        from: claim.date_from || claim.travel_date,
+        to: claim.date_to || claim.date_from,
+        dayCount
+      },
+      nightStayDetails: {
+        location: claim.night_stay_location || 'Not Specified',
+        nightsCount: claim.nights_count || 1,
+        nightStayVerified: Boolean(claim.night_stay_verified)
+      },
+      receiptsAudit: {
+        totalReceipts: receipts.length,
+        totalFoodBilled: totalBilled,
+        totalTipsDeducted,
+        netEligibleBeforeCap: totalNetEligible,
+        tipPolicy: 'Tips are strictly excluded from reimbursement'
+      },
+      policyLimits: {
+        dailyCutoffAllowedUsd: foodDailyCutoff,
+        totalAllowableCeilingUsd: allowableCeiling
+      },
+      financials: {
+        claimedAmountUsd: claimed,
+        systemCalculatedAmountUsd: calculatedAmount,
+        varianceUsd: variance,
+        isOverClaimed,
+        currency: 'USD',
+        currencySymbol: '$',
+        policyStatus: isOverClaimed ? `Exceeds $${foodDailyCutoff}/day ceiling or contains non-reimbursable tips` : 'Within allowable food limits'
+      }
+    };
+
+    const nextStatus = (claim.status && !['pending', 'submitted'].includes(claim.status)) 
+      ? claim.status 
+      : 'pending_hotel_verification';
+    const pendingReason = nextStatus === 'pending_hotel_verification'
+      ? 'Awaiting Hotel Booking Team night-stay authorization verification'
+      : (claim.pending_reason || 'Under Review');
+
+    const updatedClaim = db.updateClaim(claim.id, {
+      total_tip_deducted: totalTipsDeducted,
+      eligible_food_amount: totalNetEligible,
+      calculated_amount: calculatedAmount,
+      approved_amount: Math.min(claimed, calculatedAmount),
+      automation_report_json: JSON.stringify(automationReport),
+      automation_run_at: new Date().toISOString(),
+      status: nextStatus,
+      pending_reason: pendingReason
+    });
+
+    return updatedClaim;
+  }
+
+  // ==================== FUEL EXPENSE CALCULATION ==================== //
   // Standard policy: 30 km per gallon allowed limit
   const mileageKmPerGallon = parseFloat(settings.mileage_km_per_gallon || settings.mileage_km_per_liter) || 30.0;
   
-  // 1. Get effective gas rate for US on the travel date ($/Gallon)
-  const gasInfo = await getEffectivePetrolRate(claim.travel_date);
-  
+  // 1. Calculate Weighted Average Gas Rate from uploaded receipts
+  const receipts = Array.isArray(claim.receipts) ? claim.receipts : [];
+  let totalFuelReceiptCost = 0;
+  let totalFuelGallons = 0;
+
+  receipts.forEach(r => {
+    const gallons = parseFloat(r.gallons) || 0;
+    const rate = parseFloat(r.rate || r.rate_per_gallon) || 0;
+    const amt = parseFloat(r.amount || r.fuel_total_cost) || (gallons * rate);
+    if (gallons > 0) {
+      totalFuelGallons += gallons;
+      totalFuelReceiptCost += (gallons * (rate > 0 ? rate : 3.50));
+    } else if (amt > 0) {
+      totalFuelReceiptCost += amt;
+    }
+  });
+
+  // Effective gas rate fallback if no receipts or zero gallons
+  const gasInfo = await getEffectivePetrolRate(claim.travel_date || claim.date_from);
+  let effectiveFuelRate = gasInfo.rate;
+  let rateSource = gasInfo.source;
+
+  if (totalFuelGallons > 0 && totalFuelReceiptCost > 0) {
+    effectiveFuelRate = Number((totalFuelReceiptCost / totalFuelGallons).toFixed(3));
+    rateSource = `Receipts Weighted Average ($${totalFuelReceiptCost.toFixed(2)} ÷ ${totalFuelGallons.toFixed(2)} Gal)`;
+  }
+
   // 2. Prepare home location and stops
   const home = {
-    name: claim.home_location,
+    name: claim.home_location || 'Home Origin',
     lat: parseFloat(claim.home_lat),
     lng: parseFloat(claim.home_lng)
   };
@@ -89,23 +209,27 @@ async function executeAutomation(claim) {
   const totalDistanceKm = routeResult.totalDistanceKm || 0;
   // Calculate fuel gallons allowed: total km / 30 km per gallon
   const fuelGallons = Number((totalDistanceKm / mileageKmPerGallon).toFixed(2));
-  const calculatedAmount = Number((fuelGallons * gasInfo.rate).toFixed(2));
+  const calculatedAmount = Number((fuelGallons * effectiveFuelRate).toFixed(2));
 
   // Determine difference with claimed amount
-  const claimed = Number(claim.claimed_amount) || 0;
   const variance = Number((claimed - calculatedAmount).toFixed(2));
   const isOverClaimed = variance > 0;
 
   // Build Comprehensive Automation Audit Report
   const automationReport = {
     generatedAt: new Date().toISOString(),
+    expenseType: 'fuel',
     calculationEngine: routeResult.method,
     employee: {
       name: claim.employee_name,
       id: claim.employee_id,
       email: claim.employee_email
     },
-    travelDate: claim.travel_date,
+    travelDate: claim.travel_date || claim.date_from,
+    dateRange: {
+      from: claim.date_from || claim.travel_date,
+      to: claim.date_to || claim.travel_date
+    },
     route: {
       startPoint: home.name,
       endPoint: home.name,
@@ -119,9 +243,10 @@ async function executeAutomation(claim) {
       mileagePolicyKmPerGallon: mileageKmPerGallon,
       fuelRequiredGallons: fuelGallons,
       fuelUnit: 'Gallon',
-      gasRateUsd: gasInfo.rate,
-      gasRateSource: gasInfo.source,
-      gasRateEffectiveDate: gasInfo.effectiveDate
+      gasRateUsd: effectiveFuelRate,
+      gasRateSource: rateSource,
+      totalGallonsPurchasedOnReceipts: totalFuelGallons,
+      totalReceiptFuelSpendUsd: totalFuelReceiptCost
     },
     financials: {
       claimedAmountUsd: claimed,
@@ -134,19 +259,35 @@ async function executeAutomation(claim) {
     }
   };
 
+  const nextStatus = (claim.status && !['pending', 'submitted'].includes(claim.status)) 
+    ? claim.status 
+    : 'pending_surveillance';
+  const pendingReason = nextStatus === 'pending_surveillance'
+    ? 'Awaiting Surveillance Team attendance & camera verification'
+    : (claim.pending_reason || 'Under Review');
+
+  const locationSummary = stops.length > 0 
+    ? `${home.name} ➔ ${stops[0].name}${stops.length > 1 ? ` (+${stops.length - 1} stops)` : ''} ➔ Home`
+    : (home.name || 'Travel Itinerary');
+
   // Update claim in database
   const updatedClaim = db.updateClaim(claim.id, {
     total_distance_km: totalDistanceKm,
     fuel_rate_km_per_liter: mileageKmPerGallon, // Stores 30.0
     fuel_liters: fuelGallons, // Stores Gallons
-    petrol_rate_pkr: gasInfo.rate, // Stores $/Gallon
+    petrol_rate_pkr: effectiveFuelRate, // Stores $/Gallon
     petrol_rate_date: gasInfo.effectiveDate,
+    weighted_avg_fuel_rate: effectiveFuelRate,
+    total_gallons_purchased: totalFuelGallons,
+    total_fuel_receipts_amount: totalFuelReceiptCost,
     calculated_amount: calculatedAmount,
     approved_amount: Math.min(claimed, calculatedAmount),
     route_legs_json: JSON.stringify(routeResult.legs),
     automation_report_json: JSON.stringify(automationReport),
     automation_run_at: new Date().toISOString(),
-    status: claim.status === 'approved' ? 'approved' : 'processed'
+    status: nextStatus,
+    pending_reason: pendingReason,
+    location_summary: locationSummary
   });
 
   return updatedClaim;
@@ -252,82 +393,145 @@ app.post('/api/petrol-rate/fetch-latest', async (req, res) => {
   }
 });
 
-// Submit a new reimbursement claim (User Form)
-app.post('/api/claims', upload.single('receipt'), async (req, res) => {
+// Submit a new reimbursement claim (Fuel or Food with multi-receipt uploads)
+app.post('/api/claims', upload.any(), async (req, res) => {
   try {
     const body = req.body;
-    let stops = [];
-    try {
-      stops = typeof body.stops === 'string' ? JSON.parse(body.stops) : (body.stops || []);
-    } catch {
-      stops = [];
-    }
+    const isFood = (body.expense_type || '').toLowerCase() === 'food';
 
-    if (!body.employee_name || !body.employee_id || !body.home_location || !body.claimed_amount) {
+    if (!body.employee_name || !body.employee_id || !body.claimed_amount) {
       return res.status(400).json({
         success: false,
-        error: 'Please fill all required fields (Name, Employee ID, Home location, Claimed amount)'
+        error: 'Please fill all required employee details (Name, Employee ID, Claimed Amount)'
       });
     }
 
-    let receiptUrl = null;
-    let receiptName = null;
-    if (req.file) {
-      receiptUrl = `/uploads/${req.file.filename}`;
-      receiptName = req.file.originalname;
+    if (!isFood && !body.home_location) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please specify Employee Home Location (Trip Origin & Return Point) for fuel reimbursement.'
+      });
     }
 
-    // Default home coordinates if user picked text only (e.g. geocode or Bahawalnagar default)
-    let homeLat = parseFloat(body.home_lat);
-    let homeLng = parseFloat(body.home_lng);
-    if (!homeLat || !homeLng) {
-      const geoResults = await searchLocations(body.home_location);
-      if (geoResults && geoResults.length > 0) {
-        homeLat = geoResults[0].lat;
-        homeLng = geoResults[0].lng;
-      } else {
-        // Fallback default coordinates for United States (Chicago, IL central) if offline
-        homeLat = 41.8781;
-        homeLng = -87.6298;
-      }
+    // Process uploaded receipt files
+    const uploadedFiles = req.files || [];
+    let receiptsList = [];
+    try {
+      receiptsList = typeof body.receipts === 'string' ? JSON.parse(body.receipts) : (body.receipts || []);
+    } catch {
+      receiptsList = [];
     }
 
-    // Ensure stops have coordinates
-    for (let i = 0; i < stops.length; i++) {
-      if (!stops[i].lat || !stops[i].lng) {
-        const geoStops = await searchLocations(stops[i].name || stops[i].displayName);
-        if (geoStops && geoStops.length > 0) {
-          stops[i].lat = geoStops[0].lat;
-          stops[i].lng = geoStops[0].lng;
+    // Associate uploaded files to receipt entries
+    if (uploadedFiles.length > 0) {
+      uploadedFiles.forEach((file, idx) => {
+        const fileUrl = `/uploads/${file.filename}`;
+        if (receiptsList[idx]) {
+          receiptsList[idx].receipt_url = fileUrl;
+          receiptsList[idx].receipt_name = file.originalname;
         } else {
-          // slight offset from home for demonstration if geocoder returns empty
-          stops[i].lat = homeLat + (0.08 * (i + 1));
-          stops[i].lng = homeLng + (0.08 * (i + 1));
+          receiptsList.push({
+            id: 'REC-' + Date.now() + '-' + idx,
+            receipt_url: fileUrl,
+            receipt_name: file.originalname,
+            amount: parseFloat(body.claimed_amount) || 0
+          });
+        }
+      });
+    }
+
+    let primaryReceiptUrl = receiptsList[0]?.receipt_url || null;
+    let primaryReceiptName = receiptsList[0]?.receipt_name || null;
+
+    let stops = [];
+    let homeLat = null;
+    let homeLng = null;
+
+    if (!isFood) {
+      try {
+        stops = typeof body.stops === 'string' ? JSON.parse(body.stops) : (body.stops || []);
+      } catch {
+        stops = [];
+      }
+
+      homeLat = parseFloat(body.home_lat);
+      homeLng = parseFloat(body.home_lng);
+      if (!homeLat || !homeLng) {
+        const geoResults = await searchLocations(body.home_location);
+        if (geoResults && geoResults.length > 0) {
+          homeLat = geoResults[0].lat;
+          homeLng = geoResults[0].lng;
+        } else {
+          homeLat = 41.8781;
+          homeLng = -87.6298;
+        }
+      }
+
+      for (let i = 0; i < stops.length; i++) {
+        if (!stops[i].lat || !stops[i].lng) {
+          const geoStops = await searchLocations(stops[i].name || stops[i].displayName);
+          if (geoStops && geoStops.length > 0) {
+            stops[i].lat = geoStops[0].lat;
+            stops[i].lng = geoStops[0].lng;
+          } else {
+            stops[i].lat = homeLat + (0.08 * (i + 1));
+            stops[i].lng = homeLng + (0.08 * (i + 1));
+          }
         }
       }
     }
 
+    const dateFrom = body.date_from || body.travel_date || new Date().toISOString().split('T')[0];
+    const dateTo = body.date_to || dateFrom;
+
+    const initialStatus = isFood ? 'pending_hotel_verification' : 'pending_surveillance';
+    const initialReason = isFood 
+      ? 'Awaiting Hotel Booking Team night-stay authorization verification' 
+      : 'Awaiting Surveillance Team attendance & camera verification';
+
     const created = db.createClaim({
+      expense_type: isFood ? 'food' : 'fuel',
       employee_name: body.employee_name,
       employee_id: body.employee_id,
-      employee_email: body.employee_email || `${body.employee_id.toLowerCase()}@company.com`,
-      home_location: body.home_location,
+      employee_email: body.employee_email || `${body.employee_id.toLowerCase()}@company.us`,
+      home_location: body.home_location || '',
       home_lat: homeLat,
       home_lng: homeLng,
       claimed_amount: parseFloat(body.claimed_amount),
-      travel_date: body.travel_date || new Date().toISOString().split('T')[0],
-      receipt_url: receiptUrl,
-      receipt_name: receiptName,
-      stops: stops
+      travel_date: dateFrom,
+      date_from: dateFrom,
+      date_to: dateTo,
+      receipt_url: primaryReceiptUrl,
+      receipt_name: primaryReceiptName,
+      receipts: receiptsList,
+      stops: stops,
+      status: initialStatus,
+      pending_reason: initialReason,
+      night_stay_location: body.night_stay_location || '',
+      nights_count: Number(body.nights_count) || 1,
+      night_stay_verified: body.night_stay_verified === 'true' || body.night_stay_verified === true ? 1 : 0
     });
 
-    // Automatically run the calculation automation immediately so the admin and user can see it!
+    // Run backend calculation engine for admin reports
     const processedClaim = await executeAutomation(created);
 
+    // SECURITY & PRIVACY REQUIREMENT:
+    // Client must NOT see calculated amounts upon submission; only a clean acknowledgment is returned.
     res.json({
       success: true,
-      message: 'Claim submitted and automation calculation executed successfully',
-      claim: processedClaim
+      message: `Your ${isFood ? 'food' : 'fuel'} reimbursement claim has been securely submitted and routed to the ${isFood ? 'Hotel Booking' : 'Surveillance'} team for verification.`,
+      claim: {
+        id: processedClaim.id,
+        expense_type: processedClaim.expense_type,
+        employee_name: processedClaim.employee_name,
+        employee_id: processedClaim.employee_id,
+        date_from: processedClaim.date_from,
+        date_to: processedClaim.date_to,
+        claimed_amount: processedClaim.claimed_amount,
+        status: processedClaim.status,
+        pending_reason: processedClaim.pending_reason,
+        created_at: processedClaim.created_at
+      }
     });
   } catch (err) {
     console.error('Error submitting claim:', err);
@@ -414,7 +618,74 @@ app.post('/api/claims/:id/run-automation', async (req, res) => {
   }
 });
 
-// Approve claim and send automated email
+// Surveillance Team Verification endpoint (Fuel Claims)
+app.post('/api/claims/:id/verify-surveillance', async (req, res) => {
+  try {
+    const claim = db.getClaimById(req.params.id);
+    if (!claim) {
+      return res.status(404).json({ success: false, error: 'Claim not found' });
+    }
+
+    const { status, notes, verified_by } = req.body || {};
+    const isVerified = status === 'verified';
+
+    const updated = db.updateClaim(claim.id, {
+      surveillance_status: isVerified ? 'verified' : 'rejected',
+      surveillance_notes: notes || '',
+      surveillance_checked_by: verified_by || 'Surveillance Security Officer',
+      surveillance_checked_at: new Date().toISOString(),
+      status: isVerified ? 'verification_passed' : 'rejected',
+      pending_reason: isVerified 
+        ? 'Attendance & camera footage confirmed by Surveillance Team. Ready for Admin final review.' 
+        : `Flagged by Surveillance: ${notes || 'Attendance not verified on claimed dates.'}`
+    });
+
+    res.json({
+      success: true,
+      message: `Surveillance verification recorded as ${isVerified ? 'VERIFIED' : 'REJECTED'}.`,
+      claim: updated
+    });
+  } catch (err) {
+    console.error('Error verifying surveillance:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Hotel Booking Team Verification endpoint (Food Claims)
+app.post('/api/claims/:id/verify-hotel', async (req, res) => {
+  try {
+    const claim = db.getClaimById(req.params.id);
+    if (!claim) {
+      return res.status(404).json({ success: false, error: 'Claim not found' });
+    }
+
+    const { status, notes, verified_by, night_stay_verified } = req.body || {};
+    const isVerified = status === 'verified';
+
+    const updated = db.updateClaim(claim.id, {
+      hotel_verification_status: isVerified ? 'verified' : 'rejected',
+      hotel_notes: notes || '',
+      hotel_checked_by: verified_by || 'Hotel Booking Specialist',
+      hotel_checked_at: new Date().toISOString(),
+      night_stay_verified: isVerified ? 1 : 0,
+      status: isVerified ? 'verification_passed' : 'rejected',
+      pending_reason: isVerified 
+        ? 'Night stay authorized by Hotel Booking Team. Ready for Admin final review.' 
+        : `Rejected by Hotel Team: ${notes || 'No authorized overnight booking on file.'}`
+    });
+
+    res.json({
+      success: true,
+      message: `Hotel booking verification recorded as ${isVerified ? 'VERIFIED' : 'REJECTED'}.`,
+      claim: updated
+    });
+  } catch (err) {
+    console.error('Error verifying hotel booking:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Approve claim and send automated email (Admin Decision with Standard & Custom Comments)
 app.post('/api/claims/:id/approve', async (req, res) => {
   try {
     const claim = db.getClaimById(req.params.id);
@@ -425,13 +696,17 @@ app.post('/api/claims/:id/approve', async (req, res) => {
     const approvedAmount = req.body.approved_amount !== undefined 
       ? Number(req.body.approved_amount) 
       : (claim.calculated_amount || claim.claimed_amount);
-    const adminNotes = req.body.admin_notes || 'Approved as per 10km/L company fuel policy.';
+    
+    const adminCommentType = req.body.admin_comment_type || 'policy_standard';
+    const adminNotes = req.body.admin_notes || 'Approved as per corporate reimbursement policy.';
 
     // Update claim
     const updated = db.updateClaim(claim.id, {
       status: 'approved',
       approved_amount: approvedAmount,
+      admin_comment_type: adminCommentType,
       admin_notes: adminNotes,
+      pending_reason: 'Approved',
       reviewed_at: new Date().toISOString()
     });
 
@@ -473,11 +748,14 @@ app.post('/api/claims/:id/reject', async (req, res) => {
       return res.status(404).json({ success: false, error: 'Claim not found' });
     }
 
-    const adminNotes = req.body.admin_notes || 'Claim rejected due to policy non-compliance or invalid receipts.';
+    const adminCommentType = req.body.admin_comment_type || 'others';
+    const adminNotes = req.body.admin_notes || 'Claim rejected due to policy non-compliance, missing receipts, or failed verification.';
 
     const updated = db.updateClaim(claim.id, {
       status: 'rejected',
+      admin_comment_type: adminCommentType,
       admin_notes: adminNotes,
+      pending_reason: `Rejected: ${adminNotes}`,
       reviewed_at: new Date().toISOString()
     });
 

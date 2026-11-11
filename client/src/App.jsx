@@ -125,12 +125,16 @@ export default function App() {
   };
 
   // Handle approve
-  const handleApprove = async (claimId, approvedAmount, adminNotes) => {
+  const handleApprove = async (claimId, approvedAmount, adminNotes, adminCommentType) => {
     try {
       const data = await safeFetch(`/api/claims/${claimId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ approved_amount: approvedAmount, admin_notes: adminNotes })
+        body: JSON.stringify({ 
+          approved_amount: approvedAmount, 
+          admin_notes: adminNotes,
+          admin_comment_type: adminCommentType || 'policy_standard'
+        })
       });
       if (data.success) {
         showToast(`Claim ${claimId} approved ($${Number(approvedAmount).toLocaleString('en-US', { minimumFractionDigits: 2 })}) and automated email dispatched!`);
@@ -146,12 +150,15 @@ export default function App() {
   };
 
   // Handle reject
-  const handleReject = async (claimId, adminNotes) => {
+  const handleReject = async (claimId, adminNotes, adminCommentType) => {
     try {
       const data = await safeFetch(`/api/claims/${claimId}/reject`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ admin_notes: adminNotes })
+        body: JSON.stringify({ 
+          admin_notes: adminNotes,
+          admin_comment_type: adminCommentType || 'others'
+        })
       });
       if (data.success) {
         showToast(`Claim ${claimId} rejected and notification email dispatched.`, 'info');
@@ -162,6 +169,56 @@ export default function App() {
       }
     } catch (err) {
       showToast('Error rejecting claim: ' + err.message, 'error');
+    }
+    return null;
+  };
+
+  // Handle Surveillance Verification (Fuel Claims)
+  const handleVerifySurveillance = async (claimId, status, notes) => {
+    try {
+      const data = await safeFetch(`/api/claims/${claimId}/verify-surveillance`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          status, 
+          notes,
+          verified_by: adminUser?.name || 'Surveillance Security Officer'
+        })
+      });
+      if (data.success) {
+        showToast(`Surveillance audit recorded: ${status.toUpperCase()}!`);
+        await fetchClaims();
+        return data;
+      } else {
+        showToast(data.error || 'Surveillance verification failed', 'error');
+      }
+    } catch (err) {
+      showToast('Error recording surveillance: ' + err.message, 'error');
+    }
+    return null;
+  };
+
+  // Handle Hotel Verification (Food Claims)
+  const handleVerifyHotel = async (claimId, status, notes) => {
+    try {
+      const data = await safeFetch(`/api/claims/${claimId}/verify-hotel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          status, 
+          notes,
+          verified_by: adminUser?.name || 'Hotel Booking Specialist'
+        })
+      });
+      if (data.success) {
+        showToast(`Hotel booking authorization recorded: ${status.toUpperCase()}!`);
+        await fetchClaims();
+        return data;
+      } else {
+        showToast(data.error || 'Hotel verification failed', 'error');
+      }
+    } catch (err) {
+      showToast('Error recording hotel verification: ' + err.message, 'error');
     }
     return null;
   };
@@ -202,14 +259,14 @@ export default function App() {
               <div className="hidden lg:block pl-2 border-l border-slate-200">
                 <div className="flex items-center gap-2">
                   <h1 className="text-base font-extrabold text-slate-900 tracking-tight">
-                    Travel & Fuel Reimbursement
+                    Expense Reimbursement Portal
                   </h1>
                   <span className="text-[10px] font-bold uppercase tracking-wider bg-lime-100 text-lime-800 px-2.5 py-0.5 rounded-full border border-lime-300">
-                    30 KM/Gal Limit
+                    Fuel & Food Policy
                   </span>
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Automated GPS Matrix &bull; U.S. Benchmark &bull; Instant Email Revert
+                  Automated GPS Matrix &bull; Multi-team Audit &bull; Kanban Admin Review
                 </p>
               </div>
             </div>
@@ -440,6 +497,8 @@ export default function App() {
             onRunAutomation={handleRunAutomation}
             onApprove={handleApprove}
             onReject={handleReject}
+            onVerifySurveillance={handleVerifySurveillance}
+            onVerifyHotel={handleVerifyHotel}
             onViewExpenseReport={(claimId) => {
               if (claimId) setSelectedReportClaimId(claimId);
               setActiveTab('expense_report');

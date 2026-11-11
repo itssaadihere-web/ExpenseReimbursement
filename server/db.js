@@ -28,25 +28,53 @@ try {
 
     CREATE TABLE IF NOT EXISTS claims (
       id TEXT PRIMARY KEY,
+      expense_type TEXT DEFAULT 'fuel',
       employee_name TEXT NOT NULL,
       employee_id TEXT NOT NULL,
       employee_email TEXT NOT NULL,
-      home_location TEXT NOT NULL,
+      home_location TEXT,
       home_lat REAL,
       home_lng REAL,
       claimed_amount REAL NOT NULL,
-      travel_date TEXT NOT NULL,
+      travel_date TEXT,
+      date_from TEXT,
+      date_to TEXT,
       receipt_url TEXT,
       receipt_name TEXT,
-      stops_json TEXT NOT NULL,
-      status TEXT DEFAULT 'pending',
+      receipts_json TEXT DEFAULT '[]',
+      stops_json TEXT DEFAULT '[]',
+      location_summary TEXT,
+      status TEXT DEFAULT 'pending_surveillance',
+      pending_reason TEXT,
       
-      -- Automation calculation fields
+      -- Surveillance verification fields (Fuel)
+      surveillance_status TEXT DEFAULT 'pending',
+      surveillance_notes TEXT,
+      surveillance_checked_by TEXT,
+      surveillance_checked_at TEXT,
+
+      -- Hotel verification fields (Food)
+      hotel_verification_status TEXT DEFAULT 'pending',
+      hotel_notes TEXT,
+      hotel_checked_by TEXT,
+      hotel_checked_at TEXT,
+      night_stay_verified INTEGER DEFAULT 0,
+      nights_count INTEGER DEFAULT 0,
+      night_stay_location TEXT,
+      total_tip_deducted REAL DEFAULT 0,
+      eligible_food_amount REAL DEFAULT 0,
+
+      -- Fuel weighted average & efficiency fields
       total_distance_km REAL DEFAULT 0,
-      fuel_rate_km_per_liter REAL DEFAULT 10,
+      fuel_rate_km_per_liter REAL DEFAULT 30,
       fuel_liters REAL DEFAULT 0,
       petrol_rate_pkr REAL DEFAULT 0,
       petrol_rate_date TEXT,
+      weighted_avg_fuel_rate REAL DEFAULT 0,
+      total_gallons_purchased REAL DEFAULT 0,
+      total_fuel_receipts_amount REAL DEFAULT 0,
+
+      -- Calculation & Financials
       calculated_amount REAL DEFAULT 0,
       approved_amount REAL DEFAULT 0,
       route_legs_json TEXT,
@@ -54,6 +82,7 @@ try {
       automation_run_at TEXT,
       
       -- Admin & Review fields
+      admin_comment_type TEXT DEFAULT 'policy_standard',
       admin_notes TEXT,
       reviewed_at TEXT,
       email_sent INTEGER DEFAULT 0,
@@ -73,6 +102,41 @@ try {
     );
   `);
 
+  // Safe table schema migrations for existing SQLite databases
+  const existingCols = dbInstance.prepare("PRAGMA table_info(claims)").all().map(c => c.name);
+  const addCol = (name, type) => {
+    if (!existingCols.includes(name)) {
+      try {
+        dbInstance.exec(`ALTER TABLE claims ADD COLUMN ${name} ${type}`);
+      } catch (e) {
+        console.warn(`Could not add column ${name}:`, e.message);
+      }
+    }
+  };
+  addCol('expense_type', "TEXT DEFAULT 'fuel'");
+  addCol('date_from', "TEXT");
+  addCol('date_to', "TEXT");
+  addCol('receipts_json', "TEXT DEFAULT '[]'");
+  addCol('pending_reason', "TEXT");
+  addCol('location_summary', "TEXT");
+  addCol('surveillance_status', "TEXT DEFAULT 'pending'");
+  addCol('surveillance_notes', "TEXT");
+  addCol('surveillance_checked_by', "TEXT");
+  addCol('surveillance_checked_at', "TEXT");
+  addCol('hotel_verification_status', "TEXT DEFAULT 'pending'");
+  addCol('hotel_notes', "TEXT");
+  addCol('hotel_checked_by', "TEXT");
+  addCol('hotel_checked_at', "TEXT");
+  addCol('night_stay_verified', "INTEGER DEFAULT 0");
+  addCol('nights_count', "INTEGER DEFAULT 0");
+  addCol('night_stay_location', "TEXT");
+  addCol('total_tip_deducted', "REAL DEFAULT 0");
+  addCol('eligible_food_amount', "REAL DEFAULT 0");
+  addCol('weighted_avg_fuel_rate', "REAL DEFAULT 0");
+  addCol('total_gallons_purchased', "REAL DEFAULT 0");
+  addCol('total_fuel_receipts_amount', "REAL DEFAULT 0");
+  addCol('admin_comment_type', "TEXT DEFAULT 'policy_standard'");
+
   // Seed default settings for US Gas & 30 km/gallon rule
   const getSetting = dbInstance.prepare('SELECT value FROM settings WHERE key = ?');
   const insertSetting = dbInstance.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
@@ -81,11 +145,13 @@ try {
   insertSetting.run('gas_rate', '3.50');
   insertSetting.run('mileage_km_per_gallon', '30.0');
   insertSetting.run('mileage_km_per_liter', '30.0'); // backward compat alias
+  insertSetting.run('food_daily_cutoff_limit', '25.00');
+  insertSetting.run('fuel_rate_mode', 'weighted_average');
   insertSetting.run('currency', 'USD');
   insertSetting.run('currency_symbol', '$');
   insertSetting.run('fuel_unit', 'Gallon');
   insertSetting.run('country', 'United States');
-  console.log('✅ SQLite database initialized successfully at:', dbPath);
+  console.log('✅ SQLite database initialized and migrated successfully at:', dbPath);
 } catch (err) {
   console.warn('⚠️ SQLite initialization notice, using JSON store fallback:', err.message);
   useJsonStore = true;
@@ -171,31 +237,62 @@ const db = {
   },
 
   createClaim(claim) {
+    const isFood = (claim.expense_type || '').toLowerCase() === 'food';
+    const dateFrom = claim.date_from || claim.travel_date || new Date().toISOString().split('T')[0];
+    const dateTo = claim.date_to || dateFrom;
+    
     const formatted = {
       id: claim.id || 'CLM-' + Date.now().toString(36).toUpperCase(),
+      expense_type: isFood ? 'food' : 'fuel',
       employee_name: claim.employee_name,
       employee_id: claim.employee_id,
       employee_email: claim.employee_email,
-      home_location: claim.home_location,
+      home_location: claim.home_location || (isFood ? 'N/A (Food Expense)' : ''),
       home_lat: claim.home_lat || null,
       home_lng: claim.home_lng || null,
       claimed_amount: Number(claim.claimed_amount) || 0,
-      travel_date: claim.travel_date || new Date().toISOString().split('T')[0],
+      travel_date: dateFrom,
+      date_from: dateFrom,
+      date_to: dateTo,
       receipt_url: claim.receipt_url || null,
       receipt_name: claim.receipt_name || null,
+      receipts_json: typeof claim.receipts === 'string' ? claim.receipts : JSON.stringify(claim.receipts || []),
       stops_json: typeof claim.stops === 'string' ? claim.stops : JSON.stringify(claim.stops || []),
-      status: 'pending',
-      total_distance_km: 0,
-      fuel_rate_km_per_liter: 10,
-      fuel_liters: 0,
-      petrol_rate_pkr: 0,
-      petrol_rate_date: null,
-      calculated_amount: 0,
-      approved_amount: 0,
-      route_legs_json: '[]',
-      automation_report_json: null,
-      automation_run_at: null,
-      admin_notes: '',
+      location_summary: claim.location_summary || (isFood ? (claim.night_stay_location || 'Food & Lodging') : (claim.home_location || 'Travel Itinerary')),
+      status: claim.status || (isFood ? 'pending_hotel_verification' : 'pending_surveillance'),
+      pending_reason: claim.pending_reason || (isFood ? 'Awaiting Hotel Booking Team night-stay authorization verification' : 'Awaiting Surveillance Team attendance & camera verification'),
+      
+      surveillance_status: claim.surveillance_status || 'pending',
+      surveillance_notes: claim.surveillance_notes || '',
+      surveillance_checked_by: claim.surveillance_checked_by || null,
+      surveillance_checked_at: claim.surveillance_checked_at || null,
+
+      hotel_verification_status: claim.hotel_verification_status || 'pending',
+      hotel_notes: claim.hotel_notes || '',
+      hotel_checked_by: claim.hotel_checked_by || null,
+      hotel_checked_at: claim.hotel_checked_at || null,
+      night_stay_verified: claim.night_stay_verified ? 1 : 0,
+      nights_count: Number(claim.nights_count) || 0,
+      night_stay_location: claim.night_stay_location || '',
+      total_tip_deducted: Number(claim.total_tip_deducted) || 0,
+      eligible_food_amount: Number(claim.eligible_food_amount) || 0,
+
+      total_distance_km: Number(claim.total_distance_km) || 0,
+      fuel_rate_km_per_liter: Number(claim.fuel_rate_km_per_liter) || 30,
+      fuel_liters: Number(claim.fuel_liters) || 0,
+      petrol_rate_pkr: Number(claim.petrol_rate_pkr) || 0,
+      petrol_rate_date: claim.petrol_rate_date || null,
+      weighted_avg_fuel_rate: Number(claim.weighted_avg_fuel_rate) || 0,
+      total_gallons_purchased: Number(claim.total_gallons_purchased) || 0,
+      total_fuel_receipts_amount: Number(claim.total_fuel_receipts_amount) || 0,
+
+      calculated_amount: Number(claim.calculated_amount) || 0,
+      approved_amount: Number(claim.approved_amount) || 0,
+      route_legs_json: typeof claim.route_legs === 'string' ? claim.route_legs : JSON.stringify(claim.route_legs || []),
+      automation_report_json: claim.automation_report_json || null,
+      automation_run_at: claim.automation_run_at || null,
+      admin_comment_type: claim.admin_comment_type || 'policy_standard',
+      admin_notes: claim.admin_notes || '',
       reviewed_at: null,
       email_sent: 0,
       email_sent_at: null,
@@ -205,17 +302,27 @@ const db = {
     if (!useJsonStore) {
       const stmt = dbInstance.prepare(`
         INSERT INTO claims (
-          id, employee_name, employee_id, employee_email, home_location, home_lat, home_lng,
-          claimed_amount, travel_date, receipt_url, receipt_name, stops_json, status,
+          id, expense_type, employee_name, employee_id, employee_email, home_location, home_lat, home_lng,
+          claimed_amount, travel_date, date_from, date_to, receipt_url, receipt_name, receipts_json, stops_json,
+          location_summary, status, pending_reason,
+          surveillance_status, surveillance_notes, surveillance_checked_by, surveillance_checked_at,
+          hotel_verification_status, hotel_notes, hotel_checked_by, hotel_checked_at,
+          night_stay_verified, nights_count, night_stay_location, total_tip_deducted, eligible_food_amount,
           total_distance_km, fuel_rate_km_per_liter, fuel_liters, petrol_rate_pkr, petrol_rate_date,
+          weighted_avg_fuel_rate, total_gallons_purchased, total_fuel_receipts_amount,
           calculated_amount, approved_amount, route_legs_json, automation_report_json, automation_run_at,
-          admin_notes, reviewed_at, email_sent, email_sent_at, created_at
+          admin_comment_type, admin_notes, reviewed_at, email_sent, email_sent_at, created_at
         ) VALUES (
-          @id, @employee_name, @employee_id, @employee_email, @home_location, @home_lat, @home_lng,
-          @claimed_amount, @travel_date, @receipt_url, @receipt_name, @stops_json, @status,
+          @id, @expense_type, @employee_name, @employee_id, @employee_email, @home_location, @home_lat, @home_lng,
+          @claimed_amount, @travel_date, @date_from, @date_to, @receipt_url, @receipt_name, @receipts_json, @stops_json,
+          @location_summary, @status, @pending_reason,
+          @surveillance_status, @surveillance_notes, @surveillance_checked_by, @surveillance_checked_at,
+          @hotel_verification_status, @hotel_notes, @hotel_checked_by, @hotel_checked_at,
+          @night_stay_verified, @nights_count, @night_stay_location, @total_tip_deducted, @eligible_food_amount,
           @total_distance_km, @fuel_rate_km_per_liter, @fuel_liters, @petrol_rate_pkr, @petrol_rate_date,
+          @weighted_avg_fuel_rate, @total_gallons_purchased, @total_fuel_receipts_amount,
           @calculated_amount, @approved_amount, @route_legs_json, @automation_report_json, @automation_run_at,
-          @admin_notes, @reviewed_at, @email_sent, @email_sent_at, @created_at
+          @admin_comment_type, @admin_notes, @reviewed_at, @email_sent, @email_sent_at, @created_at
         )
       `);
       stmt.run(formatted);
@@ -288,6 +395,7 @@ const db = {
     return {
       ...row,
       stops: safeJsonParse(row.stops_json, []),
+      receipts: safeJsonParse(row.receipts_json, []),
       route_legs: safeJsonParse(row.route_legs_json, []),
       automation_report: safeJsonParse(row.automation_report_json, null)
     };
